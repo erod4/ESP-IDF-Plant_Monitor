@@ -20,4 +20,5 @@ void set_event_bit(EventBits_t bit);
 
 // Function to wait for event bits and handle them
 void handle_event_bits(void *param);
+
 #endif

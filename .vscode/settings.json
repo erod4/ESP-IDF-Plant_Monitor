@@ -6,10 +6,14 @@
     "OPENOCD_SCRIPTS": "/Users/enrique/.espressif/tools/openocd-esp32/v0.12.0-esp32-20240318/openocd-esp32/share/openocd/scripts",
     "ESP_ROM_ELF_DIR": "/Users/enrique/.espressif/tools/esp-rom-elfs/20240305/"
   },
-  "idf.espIdfPath": "/Users/enrique/esp/esp-idf",
+  "idf.espIdfPath": "/Users/enrique/esp/v5.1-rc2/esp-idf",
   "idf.openOcdConfigs": ["board/esp32-wrover-kit-3.3v.cfg"],
-  "idf.port": "/dev/tty.DSDTECHHC-05",
+  "idf.port": "/dev/tty.usbserial-0001",
   "idf.pythonBinPath": "/Users/enrique/.espressif/python_env/idf5.4_py3.12_env/bin/python",
   "idf.toolsPath": "/Users/enrique/.espressif",
-  "idf.flashType": "JTAG"
+  "idf.flashType": "UART",
+  "files.associations": {
+    "*.dbclient-js": "javascript",
+    "aws_iot.h": "c"
+  }
 }

@@ -10,6 +10,8 @@
 #include "app_NVS.h"
 #include "rgb_led.h"
 #include "global_event_group.h"
+#include "aws_iot.h"
+#include "toggle_sleep_button.h"
 
 static esp_netif_t *esp_netif;
 static const char TAG[] = "WIFI_APP";
@@ -17,6 +19,7 @@ static EventGroupHandle_t wifi_events;
 const int CONNECTED = BIT0;
 const int DISCONNECT = BIT1;
 
+TimerHandle_t wifi_connection_timer;
 int wifi_retry_count = 0;
 
 static wifi_connected_event_callback_t wifi_connected_event_cb;
@@ -139,12 +142,7 @@ static char *get_wifi_disconnection_str(wifi_err_reason_t wifi_err_reason)
         return "WIFI_REASON_ASSOC_COMEBACK_TIME_TOO_LONG";
     case WIFI_REASON_SA_QUERY_TIMEOUT:
         return "WIFI_REASON_SA_QUERY_TIMEOUT";
-    case WIFI_REASON_NO_AP_FOUND_W_COMPATIBLE_SECURITY:
-        return "WIFI_REASON_NO_AP_FOUND_W_COMPATIBLE_SECURITY";
-    case WIFI_REASON_NO_AP_FOUND_IN_AUTHMODE_THRESHOLD:
-        return "WIFI_REASON_NO_AP_FOUND_IN_AUTHMODE_THRESHOLD";
-    case WIFI_REASON_NO_AP_FOUND_IN_RSSI_THRESHOLD:
-        return "WIFI_REASON_NO_AP_FOUND_IN_RSSI_THRESHOLD";
+
     default:
         return "UNKNOWN";
     }
@@ -188,6 +186,13 @@ static void wifi_event_handler(void *event_handler_arg, esp_event_base_t event_b
     case IP_EVENT_STA_GOT_IP:
         ESP_LOGI(TAG, "IP_EVENT_STA_GOT_IP");
         xEventGroupSetBits(wifi_events, CONNECTED);
+
+        // Stop the WiFi connection timer as connection was successful
+        if (wifi_connection_timer != NULL)
+        {
+            xTimerStop(wifi_connection_timer, 0);
+        }
+
         if (wifi_connected_event_cb)
         {
             wifi_app_call_callback();
@@ -203,11 +208,32 @@ void wifi_init(void)
 {
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
+
     wifi_init_config_t wifi_init_config = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&wifi_init_config));
+
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, wifi_event_handler, NULL));
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, wifi_event_handler, NULL));
+
     ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
+
+    // Create the WiFi connection timer (1 minute)
+    wifi_connection_timer = xTimerCreate(
+        "WiFi Conn Timer",             // Timer name
+        pdMS_TO_TICKS(60000),          // 1 minute in ticks
+        pdFALSE,                       // One-shot timer
+        (void *)0,                     // Timer ID
+        wifi_connection_timer_callback // Callback function
+    );
+
+    if (wifi_connection_timer == NULL)
+    {
+        ESP_LOGE("Timer", "Failed to create WiFi connection timer");
+    }
+    else
+    {
+        ESP_LOGI("Timer", "WiFi connection timer created successfully");
+    }
 }
 
 void wifi_app_set_callback(wifi_connected_event_callback_t cb)
@@ -231,6 +257,7 @@ esp_err_t wifi_connect_sta()
     esp_err_t err = app_nvs_retrieve_sta_creds(ssid, sizeof(ssid), pass, sizeof(pass));
     if (err != ESP_OK)
     {
+        set_event_bit(WIFI_DISCONNECTED_BIT);
         return err;
     }
     // Copy SSID and password into the Wi-Fi configuration structure
@@ -241,18 +268,87 @@ esp_err_t wifi_connect_sta()
 
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
-
-    EventBits_t event_bits = xEventGroupWaitBits(wifi_events, (CONNECTED | DISCONNECT), true, false, portMAX_DELAY);
-    if (event_bits == CONNECTED)
+    // Start the WiFi connection timer
+    if (wifi_connection_timer != NULL)
     {
+        if (xTimerStart(wifi_connection_timer, 0) != pdPASS)
+        {
+            ESP_LOGE("Timer", "Failed to start WiFi connection timer");
+        }
+        else
+        {
+            ESP_LOGI("Timer", "WiFi connection timer started");
+        }
+    }
+
+    // Wait for either CONNECTED or DISCONNECT event with a timeout
+    EventBits_t event_bits = xEventGroupWaitBits(wifi_events, (CONNECTED | DISCONNECT), true, false, pdMS_TO_TICKS(300000 + 1000)); // 5 minutes + 1 sec
+
+    if (event_bits & CONNECTED)
+    {
+        // Stop the timer as connection was successful
+        if (wifi_connection_timer != NULL)
+        {
+            if (xTimerStop(wifi_connection_timer, 0) != pdPASS)
+            {
+                ESP_LOGE("Timer", "Failed to stop WiFi connection timer");
+            }
+            else
+            {
+                ESP_LOGI("Timer", "WiFi connection timer stopped");
+            }
+        }
         return ESP_OK;
     }
-    else if (event_bits == DISCONNECT)
+    else if (event_bits & DISCONNECT)
     {
+        // Stop the timer as connection failed
+        if (wifi_connection_timer != NULL)
+        {
+            if (xTimerStop(wifi_connection_timer, 0) != pdPASS)
+            {
+                ESP_LOGE("Timer", "Failed to stop WiFi connection timer");
+            }
+            else
+            {
+                ESP_LOGI("Timer", "WiFi connection timer stopped");
+            }
+        }
         return ESP_FAIL;
     }
     else
     {
+        // Unexpected event bits, stop the timer
+        if (wifi_connection_timer != NULL)
+        {
+            if (xTimerStop(wifi_connection_timer, 0) != pdPASS)
+            {
+                ESP_LOGE("Timer", "Failed to stop WiFi connection timer");
+            }
+            else
+            {
+                ESP_LOGI("Timer", "WiFi connection timer stopped");
+            }
+        }
+        ESP_LOGW(TAG, "WiFi connection wait timed out");
         return ESP_FAIL;
+    }
+}
+void wifi_app_connected_events(void)
+{
+    ESP_LOGI(TAG, "WiFi Application Connected!!");
+
+    aws_iot_start();
+    // Here we place items when want executed when the wifi connects
+}
+
+void wifi_connection_timer_callback(TimerHandle_t xTimer)
+{
+    ESP_LOGI("Timer", "WiFi connection timeout reached. Initiating sleep mode.");
+
+    start_sleep();
+    if (clear_nvs_data() != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to clear NVS data");
     }
 }

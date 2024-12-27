@@ -11,7 +11,7 @@
 
 static const char TAG[] = "toggle_sleep_button";
 // sleep for _ seconds (in µs)
-uint64_t sleep_time = 40000000;
+uint64_t sleep_time = 3600000000;
 // Semaphore handle
 SemaphoreHandle_t toggle_sleep_semaphore = NULL;
 
@@ -61,8 +61,8 @@ void toggle_sleep_button_task(void *pvParam)
             //     printf("GPIO is invalid for sleep!!!\n");
             // }
             ESP_ERROR_CHECK(esp_sleep_enable_timer_wakeup(sleep_time)); // enable wake up source
-
-            ESP_ERROR_CHECK(esp_deep_sleep_try_to_start()); // returns if sleep is rejected
+            ESP_ERROR_CHECK(esp_sleep_enable_ext0_wakeup(TOGGLE_SLEEP_BUTTON, 0));
+            esp_deep_sleep_start(); // returns if sleep is rejected
         }
     }
 }
@@ -102,5 +102,5 @@ void start_sleep(void)
     ESP_ERROR_CHECK(esp_sleep_enable_timer_wakeup(sleep_time)); //> enable wake up source
 
     printf("Attempting to place device in light sleep, wake up source is timer and gpio\n");
-    ESP_ERROR_CHECK(esp_deep_sleep_try_to_start());
+    esp_deep_sleep_start();
 }

@@ -24,6 +24,8 @@
  *
  */
 #include "aws_iot.h"
+#include "app_NVS.h"
+#include "cJSON.h"
 
 #include <ctype.h>
 #include <limits.h>
@@ -53,7 +55,7 @@
 #include "global_event_group.h"
 
 static const char *TAG = "aws_iot";
-
+static const char *ID = "507f1f77bcf86cd799439011";
 // AWS IoT task handle
 static TaskHandle_t task_aws_iot = NULL;
 
@@ -79,8 +81,67 @@ void iot_subscribe_callback_handler(AWS_IoT_Client *pClient, char *topicName, ui
                                     IoT_Publish_Message_Params *params, void *pData)
 {
     ESP_LOGI(TAG, "Subscribe callback Test: %.*s\t%.*s", topicNameLen, topicName, (int)params->payloadLen, (char *)params->payload);
-}
+    char incoming_msg[128];
+    memset(incoming_msg, 0, sizeof(incoming_msg));
+    memcpy(incoming_msg, params->payload, params->payloadLen);
 
+    // Check if this message is from the delete topic
+    if (strncmp(topicName, "delete", topicNameLen) == 0)
+    {
+        // Parse JSON
+        cJSON *root = cJSON_Parse(incoming_msg);
+        if (root == NULL)
+        {
+            ESP_LOGE(TAG, "Failed to parse JSON");
+            return;
+        }
+
+        cJSON *msg = cJSON_GetObjectItem(root, "message");
+        if (cJSON_IsString(msg) && (msg->valuestring != NULL))
+        {
+            // Compare extracted message to ID
+            if (strcmp(msg->valuestring, ID) == 0)
+            {
+                ESP_LOGI(TAG, "Delete request matches our user_id. Clearing credentials...");
+                if (clear_nvs_data() == ESP_OK)
+                {
+                    ESP_LOGI(TAG, "Device creds and user_id cleared.");
+
+                    // Publish acknowledgment back to "delete" topic
+                    const char *ack_topic = "delete";
+                    const char *ack_payload = ""; // Empty payload for acknowledgment
+
+                    IoT_Publish_Message_Params ack_params;
+                    ack_params.qos = QOS1; // Use QoS0 for acknowledgment
+                    ack_params.payload = (void *)ack_payload;
+                    ack_params.payloadLen = strlen(ack_payload);
+                    ack_params.isRetained = 1; // Retain the message
+
+                    IoT_Error_t rc = aws_iot_mqtt_publish(pClient, ack_topic, (uint16_t)strlen(ack_topic), &ack_params);
+                    if (rc == SUCCESS)
+                    {
+                        ESP_LOGI(TAG, "Acknowledge message published successfully on the same 'delete' topic.");
+                    }
+                    else
+                    {
+                        ESP_LOGE(TAG, "Failed to publish acknowledge message. Error: %d", rc);
+                    }
+                    set_event_bit(WIFI_DISCONNECTED_BIT);
+                }
+            }
+            else
+            {
+                ESP_LOGI(TAG, "Delete request received but does not match ID.");
+            }
+        }
+        else
+        {
+            ESP_LOGI(TAG, "No 'message' field in JSON or it's not a string");
+        }
+
+        cJSON_Delete(root);
+    }
+}
 void disconnectCallbackHandler(AWS_IoT_Client *pClient, void *data)
 {
     ESP_LOGW(TAG, "MQTT Disconnect");
@@ -112,12 +173,19 @@ void disconnectCallbackHandler(AWS_IoT_Client *pClient, void *data)
 
 void aws_iot_task(void *param)
 {
-    char cPayload[100];
-
+    char cPayload[512];
+    char user_id[64];
     int32_t i = 0;
 
     IoT_Error_t rc = FAILURE;
-
+    // Retrieve user_id from NVS
+    if (app_nvs_retrieve_user_id(user_id, sizeof(user_id)) != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to retrieve user_id from NVS");
+        // Handle this error as appropriate for your application
+        // For now, we will just set a default user_id.
+        strcpy(user_id, "unknown");
+    }
     AWS_IoT_Client client;
     IoT_Client_Init_Params mqttInitParams = iotClientInitParamsDefault;
     IoT_Client_Connect_Params connectParams = iotClientConnectParamsDefault;
@@ -181,15 +249,24 @@ void aws_iot_task(void *param)
 
     const char *TOPIC = "test_topic/esp32";
     const int TOPIC_LEN = strlen(TOPIC);
+    const char *DELETE_TOPIC = "delete";
+    const int DELETE_TOPIC_LEN = strlen(DELETE_TOPIC);
 
     ESP_LOGI(TAG, "Subscribing...");
-    rc = aws_iot_mqtt_subscribe(&client, TOPIC, TOPIC_LEN, QOS0, iot_subscribe_callback_handler, NULL);
+    rc = aws_iot_mqtt_subscribe(&client, TOPIC, TOPIC_LEN, QOS1, iot_subscribe_callback_handler, NULL);
     if (SUCCESS != rc)
     {
         ESP_LOGE(TAG, "Error subscribing : %d ", rc);
         abort();
     }
-    set_event_bit(AWS_IOT_SUCCESS_BIT);
+    ESP_LOGI(TAG, "Subscribing to delete topic...");
+    rc = aws_iot_mqtt_subscribe(&client, DELETE_TOPIC, DELETE_TOPIC_LEN, QOS1, iot_subscribe_callback_handler, NULL);
+    if (SUCCESS != rc)
+    {
+        ESP_LOGE(TAG, "Error subscribing to delete topic: %d ", rc);
+        abort();
+    }
+    static bool aws_message_sent_once = false;
 
     // sprintf(cPayload, "%s : %ld ", "hello from SDK", i);
 
@@ -217,7 +294,7 @@ void aws_iot_task(void *param)
         rc = aws_iot_mqtt_publish(&client, TOPIC, TOPIC_LEN, &paramsQOS0);
         // sprintf(cPayload, "%s ,%s : %.1f, %s : %.1f, %s : %.1f", "1", "Temperature", getTemp(), "Humidity", getHum(), "Moisture", get_moisture());
 
-        sprintf(cPayload, "%s ,%s : %.1f, %s : %.1f, %s : %.1f", "1", "Temperature", getTemp(), "Humidity", getHum(), "Moisture", get_moisture());
+        sprintf(cPayload, "%s,%s,%.1f,%.1f,%.1f,9", user_id, ID, getTemp(), getHum(), get_moisture());
         paramsQOS1.payloadLen = strlen(cPayload);
         rc = aws_iot_mqtt_publish(&client, TOPIC, TOPIC_LEN, &paramsQOS1);
         if (rc == SUCCESS)

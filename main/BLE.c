@@ -10,18 +10,21 @@
 #include "services/gatt/ble_svc_gatt.h"
 #include "rgb_led.h"
 #include "app_NVS.h"
+#include "WiFi_app.h"
+#include "toggle_sleep_button.h"
 uint8_t ble_addr_type;
+TimerHandle_t ble_adv_timer;
 
 static int device_read(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg)
 {
-    os_mbuf_append(ctxt->om, "E.R", strlen("E.R"));
+    os_mbuf_append(ctxt->om, "507f1f77bcf86cd799439011", strlen("507f1f77bcf86cd799439011"));
     return 0;
 }
 
 void parse_and_save_wifi_credentials(const char *input)
 {
     esp_err_t esp_err;
-    char id[20];               // Buffer for ID
+    char id[25];               // Buffer for ID
     char network_id[20];       // Buffer for network ID
     char network_password[50]; // Buffer for network password
 
@@ -59,6 +62,9 @@ void parse_and_save_wifi_credentials(const char *input)
     if (esp_err == ESP_OK)
     {
         rgb_led_network_credentials_set();
+        wifi_init();
+        wifi_app_set_callback(&wifi_app_connected_events);
+        wifi_connect_sta();
     }
 }
 
@@ -96,23 +102,41 @@ static int ble_gap_event(struct ble_gap_event *event, void *arg)
         ESP_LOGI("GAP", "BLE_GAP_EVENT_CONNECT %s", event->connect.status == 0 ? "OK" : "FAILED");
         if (event->connect.status == 0)
         {
-
-            ble_app_advertise();
+            // Connection established, stop the timer
+            if (ble_adv_timer != NULL)
+            {
+                xTimerStop(ble_adv_timer, 0);
+            }
+            // If you intend to advertise again after a connection, ensure to handle the timer appropriately
         }
         break;
+
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGI("GAP", "BLE_GAP_EVENT_DISCONNECT");
         ble_app_advertise();
-
+        // Restart the timer as advertising resumes
+        if (ble_adv_timer != NULL)
+        {
+            xTimerStop(ble_adv_timer, 0);
+            xTimerStart(ble_adv_timer, 0);
+        }
         break;
+
     case BLE_GAP_EVENT_ADV_COMPLETE:
         ESP_LOGI("GAP", "BLE_GAP_EVENT_ADV_COMPLETE");
         ble_app_advertise();
-
+        // Restart the timer as advertising resumes
+        if (ble_adv_timer != NULL)
+        {
+            xTimerStop(ble_adv_timer, 0);
+            xTimerStart(ble_adv_timer, 0);
+        }
         break;
+
     case BLE_GAP_EVENT_SUBSCRIBE:
         ESP_LOGI("GAP", "BLE_GAP_EVENT_SUBSCRIBE");
         break;
+
     default:
         break;
     }
@@ -145,6 +169,13 @@ void ble_app_on_sync(void)
 {
     ble_hs_id_infer_auto(0, &ble_addr_type);
     ble_app_advertise();
+    if (ble_adv_timer != NULL)
+    {
+        if (xTimerStart(ble_adv_timer, 0) != pdPASS)
+        {
+            ESP_LOGE("Timer", "Failed to start BLE advertising timer");
+        }
+    }
 }
 void ble_task(void *param)
 {
@@ -163,4 +194,22 @@ void ble_start(void)
     ble_hs_cfg.sync_cb = ble_app_on_sync;
     nimble_port_freertos_init(ble_task);
     rgb_led_ble_advertising();
+    // Create the BLE advertising timer (5 minutes)
+    ble_adv_timer = xTimerCreate(
+        "BLE Adv Timer",       // Timer name
+        pdMS_TO_TICKS(60000),  // 5 minutes in ticks
+        pdFALSE,               // One-shot timer
+        (void *)0,             // Timer ID
+        ble_adv_timer_callback // Callback function
+    );
+
+    if (ble_adv_timer == NULL)
+    {
+        ESP_LOGE("Timer", "Failed to create BLE advertising timer");
+    }
+}
+void ble_adv_timer_callback(TimerHandle_t xTimer)
+{
+    ESP_LOGI("Timer", "BLE advertising timeout reached. Initiating sleep mode.");
+    start_sleep();
 }

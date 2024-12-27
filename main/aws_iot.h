@@ -11,6 +11,8 @@
 #define CONFIG_AWS_EXAMPLE_CLIENT_ID "Plant_Monitor"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
+
 /**
  * Starts AWS IoT task.
  */

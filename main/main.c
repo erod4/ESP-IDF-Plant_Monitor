@@ -14,15 +14,9 @@
 #include "aws_iot.h"
 #include "toggle_sleep_button.h"
 #include "moisture_sensor.h"
+#include "i2cdev.h"
+
 #define TAG "MAIN"
-
-void wifi_app_connected_events(void)
-{
-    ESP_LOGI(TAG, "WiFi Application Connected!!");
-
-    aws_iot_start();
-    // Here we place items when want executed when the wifi connects
-}
 
 void app_main(void)
 {
@@ -33,6 +27,8 @@ void app_main(void)
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
+    ESP_ERROR_CHECK(i2cdev_init());
+
     init_event_manager();
     xTaskCreate(handle_event_bits, "handle_events_task", 4096, NULL, 5, NULL);
     read_moisture_sensor();
@@ -53,6 +49,8 @@ void app_main(void)
         break;
     case ESP_SLEEP_WAKEUP_EXT0:
         ESP_LOGI(TAG, "Wakeup cause: GPIO (EXT0)");
+        ble_start();
+
         sleep_toggle_button_config();
 
         break;

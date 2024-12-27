@@ -3,7 +3,9 @@
 #include "esp_err.h"
 #include "esp_wifi.h"
 #include "esp_netif.h"
-
+#include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
+#include "freertos/timers.h"
 // Callback typedef
 typedef void (*wifi_connected_event_callback_t)(void);
 
@@ -30,4 +32,12 @@ void wifi_app_set_callback(wifi_connected_event_callback_t cb);
  * Calls the callback function
  */
 void wifi_app_call_callback(void);
+
+/**
+ * Callback function for WiFi events
+ */
+void wifi_app_connected_events(void);
+
+void wifi_connection_timer_callback(TimerHandle_t xTimer);
+
 #endif
