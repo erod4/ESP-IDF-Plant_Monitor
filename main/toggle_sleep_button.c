@@ -104,3 +104,17 @@ void start_sleep(void)
     printf("Attempting to place device in light sleep, wake up source is timer and gpio\n");
     esp_deep_sleep_start();
 }
+void start_sleep_ble_wifi(void)
+{
+    // Start sleep mode
+
+    if (esp_sleep_is_valid_wakeup_gpio(TOGGLE_SLEEP_BUTTON))
+    {
+        printf("GPIO is valid for sleep\n");
+        esp_sleep_enable_ext0_wakeup(TOGGLE_SLEEP_BUTTON, 0); //>enable gpio wakeup after enabling sleep timer
+                                                              //> returns if sleep is rejected
+    }
+
+    printf("Attempting to place device in light sleep, wake up source is gpio\n");
+    esp_deep_sleep_start();
+}

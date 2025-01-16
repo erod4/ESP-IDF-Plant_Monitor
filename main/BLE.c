@@ -211,5 +211,5 @@ void ble_start(void)
 void ble_adv_timer_callback(TimerHandle_t xTimer)
 {
     ESP_LOGI("Timer", "BLE advertising timeout reached. Initiating sleep mode.");
-    start_sleep();
+    start_sleep_ble_wifi();
 }

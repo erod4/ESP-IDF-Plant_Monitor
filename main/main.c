@@ -15,6 +15,7 @@
 #include "toggle_sleep_button.h"
 #include "moisture_sensor.h"
 #include "i2cdev.h"
+#include "battery.h"
 
 #define TAG "MAIN"
 
@@ -33,6 +34,7 @@ void app_main(void)
     xTaskCreate(handle_event_bits, "handle_events_task", 4096, NULL, 5, NULL);
     read_moisture_sensor();
     read_hum_temp_sensor();
+    read_battery_level();
     // moisture_sensor_task_start();
     // hum_temp_sensor_task_start();
 

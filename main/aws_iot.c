@@ -53,9 +53,10 @@
 #include "tasks_common.h"
 #include "wifi_app.h"
 #include "global_event_group.h"
+#include "battery.h"
 
 static const char *TAG = "aws_iot";
-static const char *ID = "507f1f77bcf86cd799439011";
+static const char *ID = "507f1f77bcf86cd799439012";
 // AWS IoT task handle
 static TaskHandle_t task_aws_iot = NULL;
 
@@ -294,7 +295,7 @@ void aws_iot_task(void *param)
         rc = aws_iot_mqtt_publish(&client, TOPIC, TOPIC_LEN, &paramsQOS0);
         // sprintf(cPayload, "%s ,%s : %.1f, %s : %.1f, %s : %.1f", "1", "Temperature", getTemp(), "Humidity", getHum(), "Moisture", get_moisture());
 
-        sprintf(cPayload, "%s,%s,%.1f,%.1f,%.1f,9", user_id, ID, getTemp(), getHum(), get_moisture());
+        sprintf(cPayload, "%s,%s,%.1f,%.1f,%.1f,%d", user_id, ID, getTemp(), getHum(), get_moisture(), get_battery_percentage());
         paramsQOS1.payloadLen = strlen(cPayload);
         rc = aws_iot_mqtt_publish(&client, TOPIC, TOPIC_LEN, &paramsQOS1);
         if (rc == SUCCESS)

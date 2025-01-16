@@ -179,7 +179,7 @@ static void wifi_event_handler(void *event_handler_arg, esp_event_base_t event_b
         }
         xEventGroupSetBits(wifi_events, DISCONNECT);
         set_event_bit(WIFI_DISCONNECTED_BIT);
-        rgb_led_wifi_disconnected();
+
         break;
     }
 
@@ -197,7 +197,7 @@ static void wifi_event_handler(void *event_handler_arg, esp_event_base_t event_b
         {
             wifi_app_call_callback();
         }
-        rgb_led_wifi_connected();
+
         break;
     default:
         break;
@@ -346,7 +346,7 @@ void wifi_connection_timer_callback(TimerHandle_t xTimer)
 {
     ESP_LOGI("Timer", "WiFi connection timeout reached. Initiating sleep mode.");
 
-    start_sleep();
+    start_sleep_ble_wifi();
     if (clear_nvs_data() != ESP_OK)
     {
         ESP_LOGE(TAG, "Failed to clear NVS data");

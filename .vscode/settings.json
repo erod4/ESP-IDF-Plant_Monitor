@@ -13,7 +13,13 @@
   "idf.toolsPath": "/Users/enrique/.espressif",
   "idf.flashType": "UART",
   "files.associations": {
+    "*.sqlbook": "sql",
+    "*.ndjson": "jsonl",
     "*.dbclient-js": "javascript",
-    "aws_iot.h": "c"
+    "aws_iot.h": "c",
+    "battery.h": "c",
+    "adc.h": "c",
+    "i2cdev.h": "c",
+    "moisture_sensor.h": "c"
   }
 }
